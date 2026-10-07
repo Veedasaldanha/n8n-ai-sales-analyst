@@ -1,0 +1,197 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -48,
+        0
+      ],
+      "id": "c3b7d0c0-6107-41e0-9ba4-6c1e24b6ecea",
+      "name": "When chat message received",
+      "webhookId": "fde29583-03b5-4e09-b923-c409cc41a2ab"
+    },
+    {
+      "parameters": {
+        "url": "=https://app.nocodb.com/api/v2/tables/mee7o7dybbevksf/records?limit=1000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "YOUR_NOCODB_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "parameters": {
+                "parameters": [
+                  {
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.pageInfo.isLastPage }}",
+              "limitPagesFetched": true,
+              "maxRequests": 5
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        208,
+        0
+      ],
+      "id": "fc005281-4773-43d7-8162-b683a85e8563",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=     Question: {{ $('When chat message received').item.json.chatInput }}\n\n   Order data (JSON, all rows):\n   {{ $json.data }}\n\n   Precomputed totals: {{ (() => { const { data, ...totals } = $json; return JSON.stringify(totals); })() }}",
+        "options": {
+          "systemMessage": "You are a sales data analyst. The order data is provided with every message and is complete. Answer using only that data. Use the precomputed totals for any sums, and compute everything else exactly from all rows. Never print the precomputed totals or raw JSON. Keep answers short: put the key number first, then 1-3 sentences, or a small markdown table for comparisons. Never say the chart service is unavailable.\n\nFor chart requests, reply with a markdown image using a QuickChart URL, then a one-line takeaway. Format:\n![chart](https://quickchart.io/chart?w=600&h=350&v=3&bkg=white&c=URL_ENCODED_CONFIG)\n\nThe config is compact Chart.js JSON. Example:\n{\"type\":\"bar\",\"data\":{\"labels\":[\"A\",\"B\"],\"datasets\":[{\"label\":\"Net Revenue\",\"data\":[100,200],\"backgroundColor\":[\"#36A2EB\",\"#FF6384\"]}]},\"options\":{\"scales\":{\"y\":{\"beginAtZero\":true}}}}\n\nChart rules:\n- Always include &v=3&bkg=white in the URL, exactly as shown in the format.\n- Always include backgroundColor in every dataset. Use a list of colors, one per bar or slice.\n- Always set options.scales.y.beginAtZero to true for bar and line charts.\n- Use bar charts for comparisons and line charts for trends over time.\n- Use the exact values from the precomputed totals as chart data.\n- URL-encode the config (braces as %7B %7D, quotes as %22, spaces as %20). Use no spaces or line breaks in the config."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        672,
+        0
+      ],
+      "id": "0b2c2855-ed7c-4b87-83f3-dece3d406336",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-5",
+          "cachedResultName": "Claude Sonnet 5"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
+      "position": [
+        320,
+        208
+      ],
+      "id": "0366d9df-1e18-4a3f-91ae-1677e698494a",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        464,
+        208
+      ],
+      "id": "a68a3167-1534-4c80-b9c5-71a08cc4cff3",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.all().flatMap(i => i.json.list || []);\nconst rows = raw.map(r => ({\n  date: r.Order_Date, quarter: r.Quarter, year: Number(r.Year),\n  customer_type: r.Customer_Type, source: r.Source, device: r.Device,\n  region: r.Region, product: r.Product_Exposure, promo: r.Promo_Used,\n  discount: Number(r.Discount_Rate), revenue: Number(r.Net_Revenue),\n  items: Number(r.Items_Count), distinct_products: Number(r.Distinct_Products),\n  campaign: r.Campaign_ID, entry: r.Entry_Experience\n}));\nconst sum = (key, field) => {\n  const out = {};\n  for (const r of rows) out[r[key]] = +((out[r[key]] || 0) + r[field]).toFixed(2);\n  return out;\n};\nreturn [{ json: {\n  data: JSON.stringify(rows),\n  row_count: rows.length,\n  revenue_by_customer_type: sum('customer_type', 'revenue'),\n  revenue_by_quarter: sum('quarter', 'revenue'),\n  revenue_by_source: sum('source', 'revenue'),\n  revenue_by_region: sum('region', 'revenue'),\n  revenue_by_campaign: sum('campaign', 'revenue'),\n  revenue_by_product: sum('product', 'revenue'),\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "c469fa12-8725-4e45-8e68-e8971e03c2e4",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "3cda2421-53de-4c0b-9754-191903d02bee",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3611377515ae490f83fa0f9fbb59ddac89ddfa01e6565b122016657cc9f8b2f3"
+  },
+  "nodeGroups": [],
+  "id": "g8PMHiQNQcoKSYyJ",
+  "tags": []
+}
